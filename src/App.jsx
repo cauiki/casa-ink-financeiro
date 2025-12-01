@@ -276,13 +276,14 @@ export default function ACasaInkFinancial() {
               {/* LOGOTIPO PERSONALIZADO */}
               <div className="h-14 w-14 bg-black border-2 border-white flex items-center justify-center relative overflow-hidden group shadow-[0_0_15px_rgba(255,255,255,0.1)]">
                  <img 
-                   src="/logo.png" 
+                   src="/logo.png?v=3" 
                    alt="Logo Casa Ink" 
-                   className="object-cover h-full w-full"
+                   // AQUI ESTÁ O HACK: 'invert' troca branco por preto e vice-versa
+                   className="object-contain h-full w-full p-1 invert" 
                    onError={(e) => {
                      e.target.onerror = null; 
-                     e.target.style.display = 'none'; // Se der erro, esconde a imagem
-                     e.target.parentNode.classList.add('bg-zinc-800'); // E adiciona um fundo cinza
+                     e.target.style.display = 'none'; 
+                     e.target.parentNode.classList.add('bg-zinc-800'); 
                    }}
                  />
               </div>
