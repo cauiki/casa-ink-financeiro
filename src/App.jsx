@@ -274,16 +274,17 @@ export default function ACasaInkFinancial() {
           <div className="max-w-4xl mx-auto px-4 py-6 flex justify-between items-start">
             <div className="flex items-center gap-4 mt-2">
               {/* LOGOTIPO PERSONALIZADO */}
-              <div className="h-14 w-14 bg-black border-2 border-white flex items-center justify-center relative overflow-hidden group shadow-[0_0_15px_rgba(255,255,255,0.1)]">
+              {/* REMOVIDA A BORDA E O CONTAINER QUADRADO */}
+              <div className="h-16 w-auto flex items-center">
                  <img 
-                   src="/logo.png?v=3" 
+                   src="/logo.png?v=4" // v=4 para forçar a atualização do cache
                    alt="Logo Casa Ink" 
-                   // AQUI ESTÁ O HACK: 'invert' troca branco por preto e vice-versa
-                   className="object-contain h-full w-full p-1 invert" 
+                   className="h-full w-full object-contain" // Removido 'invert' e bordas
                    onError={(e) => {
                      e.target.onerror = null; 
                      e.target.style.display = 'none'; 
-                     e.target.parentNode.classList.add('bg-zinc-800'); 
+                     // Fallback discreto se a imagem falhar
+                     e.target.parentNode.innerHTML = '<span class="text-white font-black text-xl border-2 border-white p-2">CI</span>';
                    }}
                  />
               </div>
