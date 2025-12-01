@@ -32,31 +32,24 @@ import {
   Zap
 } from 'lucide-react';
 
-// --- CONFIGURAÇÃO HÍBRIDA DO FIREBASE ---
-// Funciona tanto no Preview (IA) quanto na Vercel (Produção)
+// --- CONFIGURAÇÃO DO FIREBASE ---
 const getFirebaseConfig = () => {
-  // 1. Tenta pegar das variáveis de ambiente do VITE (Padrão Vercel/Local)
-  try {
-    if (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) {
-      return {
-        apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-        appId: import.meta.env.VITE_FIREBASE_APP_ID
-      };
-    }
-  } catch (e) {
-    // Ignora erro se import.meta não existir
-  }
-
-  // 2. Fallback para o ambiente de Preview da IA
+  // 1. Ambiente de Preview da IA (Prioridade para funcionar aqui no chat)
   if (typeof __firebase_config !== 'undefined') {
     return JSON.parse(__firebase_config);
   }
 
-  return null;
+  // 2. SEU PROJETO REAL (Produção/Vercel)
+  // Como você forneceu as chaves, vamos usá-las diretamente para facilitar o deploy.
+  return {
+    apiKey: "AIzaSyBziidFxTOUj6Dw1bue91VqkvCcx_GuWeo",
+    authDomain: "a-casa-ink.firebaseapp.com",
+    projectId: "a-casa-ink",
+    storageBucket: "a-casa-ink.firebasestorage.app",
+    messagingSenderId: "896931473476",
+    appId: "1:896931473476:web:038948d8f21af498f3f411",
+    measurementId: "G-6NCN2T1FLB"
+  };
 };
 
 const firebaseConfig = getFirebaseConfig();
@@ -64,20 +57,19 @@ const firebaseConfig = getFirebaseConfig();
 // Inicialização Segura
 let app, auth, db;
 if (firebaseConfig) {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (e) {
+    console.error("Erro ao inicializar Firebase:", e);
+  }
 } else {
   console.error("Configuração do Firebase não encontrada!");
 }
 
-// App ID Híbrido
+// App ID para organizar os dados no banco
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'casa-ink-prod';
-
-// --- Paleta de Cores ---
-// Fundo: #000000 (Preto Absoluto)
-// Texto/Ícones: #ffffff (Branco Puro)
-// Destaque Financeiro: #ec008c (Magenta Neon)
 
 // --- Componente Principal ---
 export default function ACasaInkFinancial() {
@@ -95,7 +87,7 @@ export default function ACasaInkFinancial() {
   const [obs, setObs] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Listas de Opções - ATUALIZADA
+  // Listas de Opções - SEU TIME
   const artistsList = [
     "Jhully", 
     "Aryan", 
@@ -109,18 +101,17 @@ export default function ACasaInkFinancial() {
     if (!auth) return;
 
     const initAuth = async () => {
-      // 1. Tenta autenticação customizada (Ambiente IA)
+      // 1. Autenticação para Preview IA
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         try {
            await signInWithCustomToken(auth, __initial_auth_token); 
            return;
         } catch (e) {
-           console.warn("Token customizado falhou, tentando anônimo...");
+           console.warn("Token IA falhou, tentando anônimo...");
         }
       } 
       
-      // 2. Fallback para Anônimo (Ambiente Vercel/Local)
-      // Nota: No Firebase Console, habilite "Autenticação Anônima" ou configure Login com Google
+      // 2. Autenticação Anônima para seu App Real
       try {
         await signInAnonymously(auth);
       } catch (e) {
@@ -162,7 +153,6 @@ export default function ACasaInkFinancial() {
       setLoading(false);
     }, (error) => {
       console.error("Erro ao buscar transações:", error);
-      // Se der erro de permissão, não trava a tela inteira, apenas para o loading
       setLoading(false);
     });
 
@@ -266,7 +256,7 @@ export default function ACasaInkFinancial() {
   };
 
   if (!firebaseConfig) {
-     return <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">Configuração do Firebase ausente. Verifique o .env</div>
+     return <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">Configuração do Firebase ausente.</div>
   }
 
   // --- Renderização ---
