@@ -28,7 +28,7 @@ import {
   History,
   TrendingUp,
   Download,
-  Skull,
+  // Skull, // Removido pois vamos usar imagem
   Zap
 } from 'lucide-react';
 
@@ -40,7 +40,6 @@ const getFirebaseConfig = () => {
   }
 
   // 2. SEU PROJETO REAL (Produção/Vercel)
-  // Como você forneceu as chaves, vamos usá-las diretamente para facilitar o deploy.
   return {
     apiKey: "AIzaSyBziidFxTOUj6Dw1bue91VqkvCcx_GuWeo",
     authDomain: "a-casa-ink.firebaseapp.com",
@@ -274,14 +273,23 @@ export default function ACasaInkFinancial() {
         <header className="bg-black border-b border-zinc-800 sticky top-0 z-10 backdrop-blur-md bg-opacity-95">
           <div className="max-w-4xl mx-auto px-4 py-6 flex justify-between items-start">
             <div className="flex items-center gap-4 mt-2">
-              {/* LOGOTIPO BW */}
+              {/* LOGOTIPO PERSONALIZADO */}
               <div className="h-14 w-14 bg-black border-2 border-white flex items-center justify-center relative overflow-hidden group shadow-[0_0_15px_rgba(255,255,255,0.1)]">
-                 <Skull className="text-white group-hover:text-zinc-300 transition-colors duration-300" size={32} strokeWidth={1.5} />
+                 <img 
+                   src="/logo.png" 
+                   alt="Logo Casa Ink" 
+                   className="object-cover h-full w-full"
+                   onError={(e) => {
+                     e.target.onerror = null; 
+                     e.target.style.display = 'none'; // Se der erro, esconde a imagem
+                     e.target.parentNode.classList.add('bg-zinc-800'); // E adiciona um fundo cinza
+                   }}
+                 />
               </div>
 
               <div>
-                <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic leading-none">
-                  A CASA <span className="text-zinc-500">INK</span>
+                <h1 className="text-3xl font-black text-white tracking-tighter uppercase leading-none">
+                  A CASA INK
                 </h1>
                 <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.3em]">Gestão Financeira</p>
               </div>
@@ -404,6 +412,7 @@ export default function ACasaInkFinancial() {
                         <option value="Joia">JOIA (VENDA AVULSA)</option>
                         <option value="Retoque">RETOQUE</option>
                         <option value="Curso/Workshop">CURSO / WORKSHOP</option>
+                        <option value="Workshop">WORKSHOP</option>
                       </select>
                       <div className="absolute right-0 top-4 w-2 h-2 border-r-2 border-b-2 border-zinc-700 pointer-events-none rotate-45"></div>
                     </div>
