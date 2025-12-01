@@ -14,9 +14,10 @@ import {
 } from 'firebase/firestore';
 import { 
   getAuth, 
-  signInAnonymously, 
+  signInWithEmailAndPassword, // Mudança: Login com senha
   signInWithCustomToken,
-  onAuthStateChanged 
+  onAuthStateChanged,
+  signOut // Para sair
 } from 'firebase/auth';
 import { 
   Plus, 
@@ -28,18 +29,16 @@ import {
   History,
   TrendingUp,
   Download,
-  // Skull, // Removido pois vamos usar imagem
-  Zap
+  Zap,
+  Lock,
+  LogOut
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
 const getFirebaseConfig = () => {
-  // 1. Ambiente de Preview da IA (Prioridade para funcionar aqui no chat)
   if (typeof __firebase_config !== 'undefined') {
     return JSON.parse(__firebase_config);
   }
-
-  // 2. SEU PROJETO REAL (Produção/Vercel)
   return {
     apiKey: "AIzaSyBziidFxTOUj6Dw1bue91VqkvCcx_GuWeo",
     authDomain: "a-casa-ink.firebaseapp.com",
@@ -63,11 +62,8 @@ if (firebaseConfig) {
   } catch (e) {
     console.error("Erro ao inicializar Firebase:", e);
   }
-} else {
-  console.error("Configuração do Firebase não encontrada!");
 }
 
-// App ID para organizar os dados no banco
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'casa-ink-prod';
 
 // --- Componente Principal ---
@@ -77,7 +73,13 @@ export default function ACasaInkFinancial() {
   const [loading, setLoading] = useState(true);
   const [dayTotal, setDayTotal] = useState(0);
 
-  // Estados do Formulário
+  // Estados de Login
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Estados do Formulário de Entrada
   const [clientName, setClientName] = useState('');
   const [artist, setArtist] = useState('');
   const [service, setService] = useState('Tatuagem');
@@ -86,7 +88,7 @@ export default function ACasaInkFinancial() {
   const [obs, setObs] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Listas de Opções - SEU TIME
+  // Listas de Opções
   const artistsList = [
     "Jhully", 
     "Aryan", 
@@ -95,42 +97,56 @@ export default function ACasaInkFinancial() {
     "Guest 1"
   ];
 
-  // --- Autenticação e Carregamento de Dados ---
+  // --- Autenticação ---
   useEffect(() => {
     if (!auth) return;
 
     const initAuth = async () => {
-      // 1. Autenticação para Preview IA
+      // Se estiver no ambiente de teste da IA, loga automático para eu poder te mostrar
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         try {
            await signInWithCustomToken(auth, __initial_auth_token); 
-           return;
         } catch (e) {
-           console.warn("Token IA falhou, tentando anônimo...");
+           console.warn("Token IA falhou");
         }
-      } 
-      
-      // 2. Autenticação Anônima para seu App Real
-      try {
-        await signInAnonymously(auth);
-      } catch (e) {
-        console.error("Erro na autenticação:", e);
       }
+      // Se estiver na Vercel (Produção), NÃO faz nada. Espera o usuário digitar a senha.
     };
     initAuth();
 
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (!currentUser) setLoading(false); // Para mostrar a tela de login
     });
 
     return () => unsubscribeAuth();
   }, []);
 
-  // Buscar Transações
+  // --- Login Manual ---
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // Sucesso: o onAuthStateChanged vai atualizar o user e a tela vai mudar
+    } catch (error) {
+      console.error(error);
+      setLoginError("Acesso negado. Verifique e-mail e senha.");
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
+
+  // --- Buscar Transações (Só roda se tiver user) ---
   useEffect(() => {
     if (!user || !db) return;
 
-    // A query só é montada se o usuário estiver autenticado
+    setLoading(true);
     const q = query(
       collection(db, 'artifacts', appId, 'public', 'data', 'transactions'),
       orderBy('createdAt', 'desc')
@@ -151,7 +167,7 @@ export default function ACasaInkFinancial() {
       setDayTotal(total);
       setLoading(false);
     }, (error) => {
-      console.error("Erro ao buscar transações:", error);
+      console.error("Erro ao buscar:", error);
       setLoading(false);
     });
 
@@ -159,7 +175,6 @@ export default function ACasaInkFinancial() {
   }, [user]);
 
   // --- Funções Auxiliares ---
-
   const handleValueChange = (e) => {
     let val = e.target.value.replace(/\D/g, '');
     val = (val / 100).toFixed(2) + '';
@@ -193,21 +208,16 @@ export default function ACasaInkFinancial() {
       alert("Não há dados para exportar.");
       return;
     }
-
     let csvContent = "Data;Hora;Cliente;Artista;Serviço;Pagamento;Valor;Obs\n";
-
     transactions.forEach(t => {
       const date = t.createdAt ? t.createdAt.toDate().toLocaleDateString('pt-BR') : '';
       const time = t.createdAt ? t.createdAt.toDate().toLocaleTimeString('pt-BR') : '';
       const val = t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
       const cleanObs = t.obs ? t.obs.replace(/;/g, ",").replace(/\n/g, " ") : "";
-      
       csvContent += `${date};${time};${t.clientName};${t.artist};${t.service};${t.paymentMethod};${val};${cleanObs}\n`;
     });
-
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    
     const link = document.createElement("a");
     link.setAttribute("href", url);
     link.setAttribute("download", `CAIXA_CASA_INK_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
@@ -219,12 +229,9 @@ export default function ACasaInkFinancial() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!clientName || !artist || !value) return;
-
     setIsSubmitting(true);
-    
     try {
       const numericValue = parseCurrency(value);
-
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), {
         clientName,
         artist,
@@ -235,11 +242,9 @@ export default function ACasaInkFinancial() {
         createdAt: Timestamp.now(),
         userId: user.uid
       });
-
       setClientName('');
       setValue('');
       setObs('');
-      
     } catch (error) {
       console.error("Erro ao salvar:", error);
       alert("Erro ao salvar transação");
@@ -254,12 +259,81 @@ export default function ACasaInkFinancial() {
     }
   };
 
-  if (!firebaseConfig) {
-     return <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">Configuração do Firebase ausente.</div>
+  // --- RENDERIZAÇÃO: TELA DE LOGIN ---
+  if (!user) {
+    return (
+      <>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap'); .font-raleway { font-family: 'Raleway', sans-serif; }`}</style>
+        <div className="min-h-screen bg-black text-white font-raleway flex items-center justify-center p-4 selection:bg-[#ec008c]">
+          <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 p-8 shadow-2xl relative overflow-hidden">
+            {/* Efeito Neon */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#ec008c] to-transparent opacity-70"></div>
+            
+            <div className="flex flex-col items-center mb-8">
+               <div className="h-16 w-auto mb-4">
+                 <img 
+                   src="/logo.png?v=4" 
+                   alt="Logo Casa Ink" 
+                   className="h-full w-full object-contain"
+                   onError={(e) => { e.target.style.display = 'none'; }}
+                 />
+               </div>
+               <h2 className="text-xl font-black uppercase tracking-[0.2em] text-white">Acesso Restrito</h2>
+               <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Gestão Financeira</p>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">E-mail</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 text-zinc-600" size={18} />
+                  <input 
+                    type="email" 
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="admin@acasaink.com"
+                    className="w-full bg-black border border-zinc-800 text-white p-3 pl-10 focus:border-[#ec008c] focus:outline-none transition-colors uppercase text-sm"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Senha</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 text-zinc-600" size={18} />
+                  <input 
+                    type="password" 
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-black border border-zinc-800 text-white p-3 pl-10 focus:border-[#ec008c] focus:outline-none transition-colors"
+                    required
+                  />
+                </div>
+              </div>
+
+              {loginError && (
+                <div className="text-[#ec008c] text-xs font-bold text-center bg-[#ec008c]/10 p-2 border border-[#ec008c]/20">
+                  {loginError}
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                disabled={isLoggingIn}
+                className="w-full bg-white hover:bg-zinc-200 text-black font-black uppercase tracking-[0.2em] py-4 transition-all flex items-center justify-center gap-2"
+              >
+                {isLoggingIn ? 'Entrando...' : 'Acessar Sistema'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </>
+    );
   }
 
-  // --- Renderização ---
-
+  // --- RENDERIZAÇÃO: APP PRINCIPAL (Logado) ---
   return (
     <>
       <style>{`
@@ -273,17 +347,14 @@ export default function ACasaInkFinancial() {
         <header className="bg-black border-b border-zinc-800 sticky top-0 z-10 backdrop-blur-md bg-opacity-95">
           <div className="max-w-4xl mx-auto px-4 py-6 flex justify-between items-start">
             <div className="flex items-center gap-4 mt-2">
-              {/* LOGOTIPO PERSONALIZADO */}
-              {/* REMOVIDA A BORDA E O CONTAINER QUADRADO */}
               <div className="h-16 w-auto flex items-center">
                  <img 
-                   src="/logo.png?v=4" // v=4 para forçar a atualização do cache
+                   src="/logo.png?v=4" 
                    alt="Logo Casa Ink" 
-                   className="h-full w-full object-contain" // Removido 'invert' e bordas
+                   className="h-full w-full object-contain" 
                    onError={(e) => {
                      e.target.onerror = null; 
                      e.target.style.display = 'none'; 
-                     // Fallback discreto se a imagem falhar
                      e.target.parentNode.innerHTML = '<span class="text-white font-black text-xl border-2 border-white p-2">CI</span>';
                    }}
                  />
@@ -303,29 +374,38 @@ export default function ACasaInkFinancial() {
                   <TrendingUp size={14} className="text-[#ec008c]" />
                   <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total Hoje</span>
                 </div>
-                {/* VALOR GIGANTE */}
                 <span className="text-[#ec008c] font-black text-6xl tracking-tighter drop-shadow-[0_0_15px_rgba(236,0,140,0.4)] leading-[0.8]">
                   {formatCurrency(dayTotal)}
                 </span>
               </div>
               
-              <button 
-                onClick={handleExport}
-                className="flex items-center gap-2 text-[9px] uppercase font-bold text-zinc-600 hover:text-white transition-colors group mt-2"
-              >
-                <Download size={10} className="group-hover:text-white transition-colors" />
-                Exportar CSV
-              </button>
+              <div className="flex gap-2 mt-2">
+                <button 
+                  onClick={handleExport}
+                  className="flex items-center gap-2 text-[9px] uppercase font-bold text-zinc-600 hover:text-white transition-colors group"
+                  title="Baixar Excel"
+                >
+                  <Download size={12} className="group-hover:text-white transition-colors" />
+                  CSV
+                </button>
+                <div className="w-[1px] h-3 bg-zinc-800 self-center"></div>
+                <button 
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 text-[9px] uppercase font-bold text-zinc-600 hover:text-[#ec008c] transition-colors group"
+                  title="Sair do Sistema"
+                >
+                  <LogOut size={12} className="group-hover:text-[#ec008c] transition-colors" />
+                  Sair
+                </button>
+              </div>
             </div>
           </div>
         </header>
 
         <main className="max-w-4xl mx-auto px-4 py-8 space-y-12">
-
-          {/* Formulário de Entrada - Minimalist B&W */}
+          {/* Formulário de Entrada */}
           <section className="relative">
             <div className="relative bg-black p-8 border border-zinc-800 shadow-2xl">
-              
               <div className="flex items-center justify-between mb-10 border-b border-zinc-800 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="bg-white p-1 rounded-none">
@@ -336,58 +416,31 @@ export default function ACasaInkFinancial() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-8">
-                
-                {/* Linha 1: Cliente e Valor */}
+                {/* Linha 1 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                   <div className="space-y-2 group">
-                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1 group-focus-within:text-white transition-colors">
-                      Cliente
-                    </label>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1 group-focus-within:text-white transition-colors">Cliente</label>
                     <div className="relative">
                       <User className="absolute left-0 top-3 text-zinc-600 group-focus-within:text-white transition-colors" size={20} />
-                      <input 
-                        type="text" 
-                        required
-                        value={clientName}
-                        onChange={(e) => setClientName(e.target.value)}
-                        placeholder="NOME DO CLIENTE"
-                        className="w-full bg-black border-b border-zinc-800 text-white font-bold text-lg rounded-none py-3 pl-8 pr-4 focus:outline-none focus:border-white transition-all placeholder-zinc-800 uppercase"
-                      />
+                      <input type="text" required value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="NOME DO CLIENTE" className="w-full bg-black border-b border-zinc-800 text-white font-bold text-lg rounded-none py-3 pl-8 pr-4 focus:outline-none focus:border-white transition-all placeholder-zinc-800 uppercase" />
                     </div>
                   </div>
-
                   <div className="space-y-2 group">
-                    <label className="text-[10px] font-bold text-[#ec008c] uppercase tracking-widest ml-1 opacity-80 group-focus-within:opacity-100 transition-opacity">
-                      Valor (R$)
-                    </label>
+                    <label className="text-[10px] font-bold text-[#ec008c] uppercase tracking-widest ml-1 opacity-80 group-focus-within:opacity-100 transition-opacity">Valor (R$)</label>
                     <div className="relative">
                       <DollarSign className="absolute left-0 top-3 text-[#ec008c]" size={20} />
-                      <input 
-                        type="text" 
-                        required
-                        value={value}
-                        onChange={handleValueChange}
-                        placeholder="0,00"
-                        className="w-full bg-black border-b border-zinc-800 text-[#ec008c] font-black text-2xl rounded-none py-2 pl-8 pr-4 focus:outline-none focus:border-[#ec008c] transition-all placeholder-zinc-800 tracking-wider"
-                      />
+                      <input type="text" required value={value} onChange={handleValueChange} placeholder="0,00" className="w-full bg-black border-b border-zinc-800 text-[#ec008c] font-black text-2xl rounded-none py-2 pl-8 pr-4 focus:outline-none focus:border-[#ec008c] transition-all placeholder-zinc-800 tracking-wider" />
                     </div>
                   </div>
                 </div>
 
-                {/* Linha 2: Artista e Serviço */}
+                {/* Linha 2 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                   <div className="space-y-2 group">
-                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1 group-focus-within:text-white transition-colors">
-                      Artista
-                    </label>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1 group-focus-within:text-white transition-colors">Artista</label>
                     <div className="relative">
                       <User className="absolute left-0 top-3 text-zinc-600 group-focus-within:text-white transition-colors" size={20} />
-                      <select 
-                        required
-                        value={artist}
-                        onChange={(e) => setArtist(e.target.value)}
-                        className="w-full bg-black border-b border-zinc-800 text-white font-bold text-sm rounded-none py-3 pl-8 pr-4 focus:outline-none focus:border-white appearance-none uppercase"
-                      >
+                      <select required value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-black border-b border-zinc-800 text-white font-bold text-sm rounded-none py-3 pl-8 pr-4 focus:outline-none focus:border-white appearance-none uppercase">
                         <option value="" disabled>SELECIONE O ARTISTA</option>
                         {artistsList.map((art, idx) => (
                           <option key={idx} value={art}>{art.toUpperCase()}</option>
@@ -396,18 +449,11 @@ export default function ACasaInkFinancial() {
                       <div className="absolute right-0 top-4 w-2 h-2 border-r-2 border-b-2 border-zinc-700 pointer-events-none rotate-45"></div>
                     </div>
                   </div>
-
                   <div className="space-y-2 group">
-                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1 group-focus-within:text-white transition-colors">
-                      Serviço
-                    </label>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1 group-focus-within:text-white transition-colors">Serviço</label>
                     <div className="relative">
                       <Scissors className="absolute left-0 top-3 text-zinc-600 group-focus-within:text-white transition-colors" size={20} />
-                      <select 
-                        value={service}
-                        onChange={(e) => setService(e.target.value)}
-                        className="w-full bg-black border-b border-zinc-800 text-white font-bold text-sm rounded-none py-3 pl-8 pr-4 focus:outline-none focus:border-white appearance-none uppercase"
-                      >
+                      <select value={service} onChange={(e) => setService(e.target.value)} className="w-full bg-black border-b border-zinc-800 text-white font-bold text-sm rounded-none py-3 pl-8 pr-4 focus:outline-none focus:border-white appearance-none uppercase">
                         <option value="Tatuagem">TATUAGEM</option>
                         <option value="Sinal/Reserva">SINAL / RESERVA</option>
                         <option value="Piercing">PIERCING (PERFURAÇÃO)</option>
@@ -421,19 +467,13 @@ export default function ACasaInkFinancial() {
                   </div>
                 </div>
 
-                {/* Linha 3: Pagamento e Obs */}
+                {/* Linha 3 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                    <div className="space-y-2 group">
-                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1 group-focus-within:text-white transition-colors">
-                      Pagamento
-                    </label>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1 group-focus-within:text-white transition-colors">Pagamento</label>
                     <div className="relative">
                       <CreditCard className="absolute left-0 top-3 text-zinc-600 group-focus-within:text-white transition-colors" size={20} />
-                      <select 
-                        value={paymentMethod}
-                        onChange={(e) => setPaymentMethod(e.target.value)}
-                        className="w-full bg-black border-b border-zinc-800 text-white font-bold text-sm rounded-none py-3 pl-8 pr-4 focus:outline-none focus:border-white appearance-none uppercase"
-                      >
+                      <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full bg-black border-b border-zinc-800 text-white font-bold text-sm rounded-none py-3 pl-8 pr-4 focus:outline-none focus:border-white appearance-none uppercase">
                         <option value="Pix">PIX</option>
                         <option value="Dinheiro">DINHEIRO</option>
                         <option value="Débito">DÉBITO</option>
@@ -443,98 +483,54 @@ export default function ACasaInkFinancial() {
                       <div className="absolute right-0 top-4 w-2 h-2 border-r-2 border-b-2 border-zinc-700 pointer-events-none rotate-45"></div>
                     </div>
                   </div>
-
                   <div className="space-y-2 group">
-                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">
-                      OBS (Opcional)
-                    </label>
-                    <input 
-                      type="text" 
-                      value={obs}
-                      onChange={(e) => setObs(e.target.value)}
-                      placeholder="EX: PARCELOU EM 10X"
-                      className="w-full bg-black border-b border-zinc-800 text-white rounded-none py-3 px-4 focus:outline-none focus:border-zinc-500 transition-all placeholder-zinc-800 uppercase text-sm font-medium"
-                    />
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">OBS (Opcional)</label>
+                    <input type="text" value={obs} onChange={(e) => setObs(e.target.value)} placeholder="EX: PARCELOU EM 10X" className="w-full bg-black border-b border-zinc-800 text-white rounded-none py-3 px-4 focus:outline-none focus:border-zinc-500 transition-all placeholder-zinc-800 uppercase text-sm font-medium" />
                   </div>
                 </div>
 
-                <button 
-                  type="submit" 
-                  disabled={isSubmitting}
-                  className="w-full mt-10 bg-white hover:bg-zinc-200 text-black font-black uppercase tracking-[0.2em] py-5 rounded-none transition-all flex items-center justify-center gap-3 shadow-[4px_4px_0px_#333] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px]"
-                >
+                <button type="submit" disabled={isSubmitting} className="w-full mt-10 bg-white hover:bg-zinc-200 text-black font-black uppercase tracking-[0.2em] py-5 rounded-none transition-all flex items-center justify-center gap-3 shadow-[4px_4px_0px_#333] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px]">
                   {isSubmitting ? 'REGISTRANDO...' : 'REGISTRAR ENTRADA'}
                 </button>
               </form>
             </div>
           </section>
 
-          {/* Lista de Histórico */}
+          {/* Histórico */}
           <section>
             <div className="flex items-center gap-3 mb-8 px-1 border-b border-zinc-900 pb-2">
               <History className="text-white" size={20} />
               <h3 className="text-xs font-black text-white uppercase tracking-[0.2em]">Fluxo Recente</h3>
             </div>
-
             {loading ? (
               <div className="text-center py-12 text-zinc-500 font-mono text-xs uppercase animate-pulse">Carregando dados...</div>
             ) : transactions.length === 0 ? (
-              <div className="text-center py-12 bg-zinc-950 border border-zinc-900 border-dashed text-zinc-600 text-xs font-bold uppercase tracking-widest">
-                Nenhum movimento registrado hoje.
-              </div>
+              <div className="text-center py-12 bg-zinc-950 border border-zinc-900 border-dashed text-zinc-600 text-xs font-bold uppercase tracking-widest">Nenhum movimento registrado hoje.</div>
             ) : (
               <div className="space-y-6">
                 {transactions.map((t) => (
                   <div key={t.id} className="relative bg-zinc-950 p-6 border-l-[1px] border-zinc-800 hover:border-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all group">
-                    
-                    {/* Decorative Background Icon */}
-                    <div className="absolute right-0 bottom-0 opacity-[0.02] pointer-events-none transform translate-x-1/4 translate-y-1/4">
-                       <Zap size={100} className="text-white" />
-                    </div>
-
-                    {/* Esquerda: Info Principal */}
+                    <div className="absolute right-0 bottom-0 opacity-[0.02] pointer-events-none transform translate-x-1/4 translate-y-1/4"><Zap size={100} className="text-white" /></div>
                     <div className="flex items-start gap-6 z-10 relative">
-                      <div className={`h-12 w-12 flex items-center justify-center font-black text-xs border shrink-0 ${t.service === 'Sinal/Reserva' ? 'border-white text-white bg-white/10' : 'border-zinc-800 text-zinc-500 bg-zinc-900'}`}>
-                        {t.service === 'Sinal/Reserva' ? 'R' : 'T'}
-                      </div>
+                      <div className={`h-12 w-12 flex items-center justify-center font-black text-xs border shrink-0 ${t.service === 'Sinal/Reserva' ? 'border-white text-white bg-white/10' : 'border-zinc-800 text-zinc-500 bg-zinc-900'}`}>{t.service === 'Sinal/Reserva' ? 'R' : 'T'}</div>
                       <div>
-                        <div className="flex items-center gap-3">
-                          <h4 className="font-bold text-white uppercase tracking-wide text-lg">{t.clientName}</h4>
-                          {t.obs && <span className="text-[9px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-none uppercase tracking-wide font-bold">{t.obs}</span>}
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className="text-[10px] font-bold text-white uppercase tracking-wider bg-zinc-900 px-2 py-1">{t.artist}</span>
-                          <span className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest">{t.service}</span>
-                        </div>
+                        <div className="flex items-center gap-3"><h4 className="font-bold text-white uppercase tracking-wide text-lg">{t.clientName}</h4>{t.obs && <span className="text-[9px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-none uppercase tracking-wide font-bold">{t.obs}</span>}</div>
+                        <div className="flex items-center gap-2 mt-2"><span className="text-[10px] font-bold text-white uppercase tracking-wider bg-zinc-900 px-2 py-1">{t.artist}</span><span className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest">{t.service}</span></div>
                         <p className="text-[10px] text-zinc-600 mt-1 uppercase tracking-widest">{t.paymentMethod}</p>
                       </div>
                     </div>
-
-                    {/* Direita: Valor e Ações */}
                     <div className="flex items-center justify-between w-full sm:w-auto sm:gap-10 pl-18 sm:pl-0 z-10 relative mt-4 sm:mt-0">
                       <div className="flex flex-col items-end">
-                        <span className="text-[#ec008c] font-black text-4xl tracking-tighter drop-shadow-sm leading-none">
-                          {formatCurrency(t.value)}
-                        </span>
-                        <span className="text-[9px] text-zinc-600 font-bold uppercase font-mono mt-2">
-                          {formatFullDate(t.createdAt)} • {formatDate(t.createdAt)}
-                        </span>
+                        <span className="text-[#ec008c] font-black text-4xl tracking-tighter drop-shadow-sm leading-none">{formatCurrency(t.value)}</span>
+                        <span className="text-[9px] text-zinc-600 font-bold uppercase font-mono mt-2">{formatFullDate(t.createdAt)} • {formatDate(t.createdAt)}</span>
                       </div>
-                      
-                      <button 
-                        onClick={() => handleDelete(t.id)}
-                        className="text-zinc-800 hover:text-white opacity-0 group-hover:opacity-100 transition-all p-2 absolute -right-2 -top-2 sm:relative sm:right-auto sm:top-auto"
-                        title="Apagar registro"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      <button onClick={() => handleDelete(t.id)} className="text-zinc-800 hover:text-white opacity-0 group-hover:opacity-100 transition-all p-2 absolute -right-2 -top-2 sm:relative sm:right-auto sm:top-auto" title="Apagar registro"><Trash2 size={18} /></button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </section>
-
         </main>
       </div>
     </>
